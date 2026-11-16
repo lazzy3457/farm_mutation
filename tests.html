@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mutation Farm — tests unitaires</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 20px; background: #f4f1ea; color: #23211c; }
+    h1 { font-size: 20px; }
+    #summary { font-weight: 700; font-size: 16px; margin: 10px 0; }
+    .pass { color: #2e7d4f; }
+    .fail { color: #c44536; }
+    li { margin: 3px 0; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+    pre { margin: 2px 0 6px 20px; color: #c44536; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Mutation Farm — tests de la logique pure</h1>
+  <p>Tests sans dépendance sur <code>js/logic/</code>. À ouvrir via le serveur local (<code>npx serve</code> ou <code>python -m http.server</code>).</p>
+  <div id="summary">Exécution…</div>
+  <ol id="results"></ol>
+
+  <script type="module">
+    import { createInitialState, neighbors, cellId, getSetting, plantName } from './js/logic/state.js';
+    import { now, realToGameMs, setSpeed, setPaused } from './js/logic/clock.js';
+    import { plantSeed, tick, advanceTime, harvest, harvestAndSell, computeGrowMs, devMatureCell, devAdvance, applyOffline } from './js/logic/grid.js';
+    import { buySeed, sellCrop, inventoryCapacity, devAddCoins } from './js/logic/economy.js';
+
+    // ---------------------------------------------------------------------
+    // Mini-runner : test(nom, fn) ; assert(cond, msg) ; eq(a, b, msg).
+    // ---------------------------------------------------------------------
+    const results = [];
+    function test(name, fn) {
+      try { fn(); results.push({ name, ok: true }); }
+      catch (err) { results.push({ name, ok: false, err }); }
+    }
+    function assert(cond, msg = 'assertion fausse') { if (!cond) throw new Error(msg); }
+    function eq(actual, expected, msg = '') {
+      const a = JSON.stringify(actual), e = JSON.stringify(expected);
+      if (a !== e) throw new Error(`${msg} attendu ${e}, obtenu ${a}`);
+    }
+
+    // ---------------------------------------------------------------------
+    // Config de test FIXE (indépendante des valeurs d'équilibrage réelles).
+    // ---------------------------------------------------------------------
+    const config = {
+      gameVersion: 'test', configVersion: 1, saveVersion: 1,
+      start: { coins: 100, inventorySlots: 4 },
+      offline: { enabled: true, maxHours: 1 },
+      grid: { startSize: 3 },
+      plants: {
+        carotte: { name: 'Carotte', emoji: 'C', tier: 0, isBaseSeed: true, seedPrice: 10, growSeconds: 60, sellValue: 18 },
+        radis: { name: 'Radis', emoji: 'R', tier: 0, isBaseSeed: true, seedPrice: 10, growSeconds: 90, sellValue: 20 },
+        mais: { name: 'Maïs', emoji: 'M', tier: 0, isBaseSeed: true, seedPrice: 40, growSeconds: 120, sellValue: 75 },
+        mais_doreur: { name: 'Maïs Doreur', labelSetting: 'maisDoreurLabel', emoji: 'MD', tier: 2, isBaseSeed: false, sellValue: 1500 }
+      },
+      pollen: { maxCharges: 3 },
+      market: { unlocks: { carotte: { type: 'start' }, radis: { type: 'start' }, mais: { type: 'discover', plant: 'x' } } },
+      encyclopedia: { pages: [
+        { id: 1, plants: ['carotte', 'radis'], bonus: { name: 'Bronze', type: 'growSpeed', value: 0.5 } }
+      ] },
+      robuxShop: { gamePasses: { autoWater: { effect: { type: 'growTimeReduction', value: 0.30 } } } },
+      undecided: { maisDoreurLabel: { value: 'Maïs Doreur' } }
+    };
+
+    /** Raccourci : état avec des graines déjà en inventaire. */
+    function withSeeds(seeds) {
+      const s = createInitialState(config);
+      s.inventory.seeds = { ...seeds };
+      return s;
+    }
+
+    // ---------------------------- Horloge ----------------------------
+    test('clock : now() lit le temps de jeu', () => {
+      const s = createInitialState(config);
+      eq(now(s), 0);
+      s.clock.gameTimeMs = 1234;
+      eq(now(s), 1234);
+    });
+
+    test('clock : le multiplicateur s\'applique', () => {
+      eq(realToGameMs({ speed: 60, paused: false }, 1000), 60000);
+    });
+
+    test('clock : la pause fige le temps', () => {
+      eq(realToGameMs({ speed: 10, paused: true }, 1000), 0);
+    });
+
+    test('clock : tick avance le temps selon la vitesse', () => {
+      let s = setSpeed(createInitialState(config), config, { speed: 5 }).state;
+      s = tick(s, config, 2000).state;
+      eq(now(s), 10000);
+      eq(s.stats.realPlayMs, 2000);
+    });
+
+    test('clock : setSpeed / setPaused marquent une triche', () => {
+      const a = setSpeed(createInitialState(config), config, { speed: 2 }).state;
+      assert(a.dev.used, 'vitesse x2 non marquée');
+      const b = setPaused(createInitialState(config), config, { paused: true }).state;
+      assert(b.dev.used && b.clock.paused, 'pause non marquée');
+    });
+
+    test('clock : vitesse invalide refusée', () => {
+      const r = setSpeed(createInitialState(config), config, { speed: -1 });
+      eq(r.events[0].type, 'error');
+      eq(r.state.clock.speed, 1);
+    });
+
+    // ---------------------------- Grille ----------------------------
+    test('grid : voisinage orthogonal, sans diagonales', () => {
+      eq(neighbors(cellId(1, 1), 3).sort(), ['0,1', '1,0', '1,2', '2,1']);
+      eq(neighbors(cellId(0, 0), 3).sort(), ['0,1', '1,0']);
+    });
+
+    test('grid : planter consomme une graine et crée une graine qui pousse', () => {
+      const s0 = withSeeds({ carotte: 2 });
+      const { state: s } = plantSeed(s0, config, { cellId: '0,0', plantId: 'carotte' });
+      eq(s.inventory.seeds.carotte, 1);
+      eq(s.grid.cells['0,0'].mature, false);
+      eq(s.grid.cells['0,0'].growMs, 60000);
+      eq(s0.inventory.seeds.carotte, 2, 'état d\'origine modifié !');
+    });
+
+    test('grid : planter refusé sur case occupée, hors grille ou sans graine', () => {
+      let s = plantSeed(withSeeds({ carotte: 2 }), config, { cellId: '0,0', plantId: 'carotte' }).state;
+      eq(plantSeed(s, config, { cellId: '0,0', plantId: 'carotte' }).events[0].type, 'error');
+      eq(plantSeed(s, config, { cellId: '5,5', plantId: 'carotte' }).events[0].type, 'error');
+      eq(plantSeed(s, config, { cellId: '1,1', plantId: 'radis' }).events[0].type, 'error');
+    });
+
+    test('grid : maturation au bon moment, avec pollen plein', () => {
+      let s = plantSeed(withSeeds({ carotte: 1 }), config, { cellId: '0,0', plantId: 'carotte' }).state;
+      s = tick(s, config, 59999).state;
+      eq(s.grid.cells['0,0'].mature, false, 'trop tôt :');
+      const r = tick(s, config, 1);
+      eq(r.state.grid.cells['0,0'].mature, true);
+      eq(r.state.grid.cells['0,0'].pollen, 3);
+      assert(r.events.some((e) => e.type === 'matured'), 'pas d\'événement matured');
+    });
+
+    test('grid : maturations traitées dans l\'ordre chronologique', () => {
+      let s = withSeeds({ carotte: 1, radis: 1 });
+      s = plantSeed(s, config, { cellId: '0,0', plantId: 'radis' }).state;    // 90 s
+      s = plantSeed(s, config, { cellId: '1,0', plantId: 'carotte' }).state;  // 60 s
+      const r = advanceTime(s, config, 200000);
+      const matured = r.events.filter((e) => e.type === 'matured');
+      eq(matured.map((e) => e.plantId), ['carotte', 'radis']);
+      eq(matured.map((e) => e.at), [60000, 90000]);
+      eq(r.state.grid.cells['1,0'].maturedAt, 60000);
+    });
+
+    test('grid : découverte à la maturation et bonus de vitesse de page', () => {
+      let s = withSeeds({ carotte: 1, radis: 2 });
+      s = plantSeed(s, config, { cellId: '0,0', plantId: 'carotte' }).state;
+      s = plantSeed(s, config, { cellId: '1,0', plantId: 'radis' }).state;
+      const r = advanceTime(s, config, 100000);
+      assert(r.events.some((e) => e.type === 'pageCompleted'), 'page 1 non complétée');
+      eq(computeGrowMs(r.state, config, 'radis'), 60000, 'bonus +50 % :');
+    });
+
+    test('grid : Arrosoir Automatique réduit la pousse de 30 %', () => {
+      const s = createInitialState(config);
+      s.passes.autoWater = true;
+      eq(computeGrowMs(s, config, 'carotte'), 42000);
+    });
+
+    test('grid : récolter met la plante dans l\'inventaire', () => {
+      let s = plantSeed(withSeeds({ carotte: 1 }), config, { cellId: '0,0', plantId: 'carotte' }).state;
+      s = tick(s, config, 60000).state;
+      s = harvest(s, config, { cellId: '0,0' }).state;
+      eq(s.grid.cells['0,0'], undefined);
+      eq(s.inventory.crops.carotte, 1);
+    });
+
+    test('grid : on ne récolte pas une graine qui pousse', () => {
+      const s = plantSeed(withSeeds({ carotte: 1 }), config, { cellId: '0,0', plantId: 'carotte' }).state;
+      eq(harvest(s, config, { cellId: '0,0' }).events[0].type, 'error');
+    });
+
+    test('grid : récolte refusée si inventaire plein, mais « récolter et vendre » marche', () => {
+      let s = plantSeed(withSeeds({ carotte: 1, radis: 3 }), config, { cellId: '0,0', plantId: 'carotte' }).state;
+      s = tick(s, config, 60000).state;  // inventaire : 3 radis + 1 slot libre
+      s.inventory.seeds.radis = 4;        // inventaire plein (4/4)
+      eq(harvest(s, config, { cellId: '0,0' }).events[0].type, 'error');
+      const r = harvestAndSell(s, config, { cellId: '0,0' });
+      eq(r.state.coins, 118);
+      eq(r.state.stats.coinsEarned, 18);
+    });
+
+    test('grid : [DEV] mûrir une case marque la triche', () => {
+      let s = plantSeed(withSeeds({ carotte: 1 }), config, { cellId: '0,0', plantId: 'carotte' }).state;
+      const r = devMatureCell(s, config, { cellId: '0,0' });
+      eq(r.state.grid.cells['0,0'].mature, true);
+      assert(r.state.dev.used, 'triche non marquée');
+      assert(r.events.some((e) => e.type === 'matured' && e.dev), 'maturation non marquée [DEV]');
+    });
+
+    test('grid : [DEV] avancer de 60 s fait mûrir une carotte', () => {
+      let s = plantSeed(withSeeds({ carotte: 1 }), config, { cellId: '0,0', plantId: 'carotte' }).state;
+      s = devAdvance(s, config, { seconds: 60 }).state;
+      eq(s.grid.cells['0,0'].mature, true);
+    });
+
+    test('grid : hors ligne appliqué à x1 et plafonné, rien si en pause', () => {
+      let s = setSpeed(createInitialState(config), config, { speed: 600 }).state;
+      s = applyOffline(s, config, 5000).state;
+      eq(now(s), 5000, 'x1 attendu :');
+      s = applyOffline(s, config, 10 * 3600 * 1000).state;
+      eq(now(s), 5000 + 3600 * 1000, 'plafond 1 h :');
+      s = setPaused(s, config, { paused: true }).state;
+      eq(now(applyOffline(s, config, 5000).state), now(s));
+    });
+
+    // ---------------------------- Économie ----------------------------
+    test('economy : acheter retire les Pièces et ajoute la graine', () => {
+      const { state: s } = buySeed(createInitialState(config), config, { plantId: 'carotte', qty: 3 });
+      eq(s.coins, 70);
+      eq(s.inventory.seeds.carotte, 3);
+    });
+
+    test('economy : achat refusé (Pièces, verrou, inventaire plein)', () => {
+      const s = createInitialState(config);
+      eq(buySeed(s, config, { plantId: 'carotte', qty: 11 }).events[0].type, 'error', 'Pièces :');
+      eq(buySeed(s, config, { plantId: 'mais' }).events[0].type, 'error', 'verrou :');
+      const rich = { ...s, coins: 1000 };
+      eq(buySeed(rich, config, { plantId: 'carotte', qty: 5 }).events[0].type, 'error', 'inventaire :');
+      eq(inventoryCapacity(s, config), 4);
+    });
+
+    test('economy : vendre une récolte rapporte sa valeur', () => {
+      const s = createInitialState(config);
+      s.inventory.crops = { radis: 2 };
+      const r = sellCrop(s, config, { plantId: 'radis', qty: 'all' });
+      eq(r.state.coins, 140);
+      eq(r.state.inventory.crops.radis, undefined);
+      eq(sellCrop(r.state, config, { plantId: 'radis' }).events[0].type, 'error');
+    });
+
+    test('economy : [DEV] retrait de Pièces plancher à 0, non compté en gains', () => {
+      const r = devAddCoins(createInitialState(config), config, { amount: -500 });
+      eq(r.state.coins, 0);
+      eq(r.state.stats.coinsEarned, 0);
+      assert(r.state.dev.used);
+    });
+
+    // ---------------------------- Réglages ----------------------------
+    test('state : libellé « Maïs Doreur / Maïs Doré » paramétrable', () => {
+      const s = createInitialState(config);
+      eq(plantName(s, config, 'mais_doreur'), 'Maïs Doreur');
+      s.settingsOverrides.maisDoreurLabel = 'Maïs Doré';
+      eq(getSetting(s, config, 'maisDoreurLabel'), 'Maïs Doré');
+      eq(plantName(s, config, 'mais_doreur'), 'Maïs Doré');
+    });
+
+    // ---------------------------- Config réelle ----------------------------
+    async function checkRealConfig() {
+      try {
+        const real = await (await fetch('config/game-config.json')).json();
+        test('config réelle : chargée et cohérente', () => {
+          assert(real.save.key === 'mutationfarm_save_v1', 'clé de sauvegarde');
+          for (const r of real.recipes) {
+            for (const p of [...r.parents, r.result]) assert(real.plants[p], `plante inconnue dans ${r.id} : ${p}`);
+          }
+          for (const id of Object.keys(real.market.unlocks)) assert(real.plants[id], `graine de marché inconnue : ${id}`);
+          const s = createInitialState(real);
+          eq(s.coins, real.start.coins);
+        });
+      } catch (err) {
+        test('config réelle : chargée et cohérente', () => { throw err; });
+      }
+    }
+
+    // ---------------------------- Affichage ----------------------------
+    await checkRealConfig();
+    const ok = results.filter((r) => r.ok).length;
+    const summary = document.getElementById('summary');
+    summary.textContent = `${ok} / ${results.length} tests réussis`;
+    summary.className = ok === results.length ? 'pass' : 'fail';
+    const list = document.getElementById('results');
+    for (const r of results) {
+      const li = document.createElement('li');
+      li.className = r.ok ? 'pass' : 'fail';
+      li.textContent = `${r.ok ? '✔' : '✘'} ${r.name}`;
+      if (!r.ok) {
+        const pre = document.createElement('pre');
+        pre.textContent = String(r.err && r.err.message || r.err);
+        li.appendChild(pre);
+      }
+      list.appendChild(li);
+    }
+    window.__TEST_RESULTS__ = results;
+  </script>
+</body>
+</html>

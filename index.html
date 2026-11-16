@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mutation Farm — prototype</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header id="topbar" class="topbar">
+    <div class="brand">🧬 Mutation Farm <span class="muted">prototype</span></div>
+    <div class="stat" title="Pièces">🪙 <strong id="coins">0</strong></div>
+    <div class="stat" title="Robux dépensés (simulé)">💎 <strong id="robux">0</strong> <span class="muted">Robux simulés</span></div>
+    <div class="stat" title="Taille de la parcelle">▦ <strong id="grid-size">3x3</strong></div>
+    <button id="btn-expand" type="button" disabled title="Disponible à l'étape 3">Agrandir</button>
+    <div id="time-status" class="time-status"></div>
+    <div class="spacer"></div>
+    <button id="btn-dev" type="button" class="btn-ghost" hidden title="Afficher / masquer le mode dev (F2)">Dev (F2)</button>
+    <div class="version muted">v<span id="version">?</span></div>
+  </header>
+
+  <div id="layout" class="layout">
+    <aside id="left-panel" class="panel left">
+      <section>
+        <h2>Marché</h2>
+        <div id="market"></div>
+      </section>
+      <section>
+        <h2>Inventaire <span id="slots" class="muted"></span></h2>
+        <p class="hint">Clique sur une graine pour la sélectionner, puis sur une case vide pour la planter.</p>
+        <div id="inventory"></div>
+      </section>
+    </aside>
+
+    <main id="center" class="center">
+      <div id="grid-wrap" class="grid-wrap">
+        <div id="grid" class="grid"></div>
+        <div id="cell-menu" class="cell-menu" hidden></div>
+      </div>
+      <div id="selection-hint" class="selection-hint"></div>
+    </main>
+
+    <aside id="dev-panel" class="panel dev" hidden></aside>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-box">
+      <p id="modal-text"></p>
+      <div id="modal-buttons" class="modal-buttons"></div>
+    </div>
+  </div>
+
+  <noscript>Ce prototype a besoin de JavaScript.</noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

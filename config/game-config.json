@@ -1,0 +1,185 @@
+{
+  "_comment": "Mutation Farm - fichier unique d'équilibrage. Toute valeur marquée \"placeholder\": true est une proposition de départ à équilibrer (voir README). Les durées sont en secondes, les taux entre 0 et 1.",
+
+  "gameVersion": "0.1.0",
+  "configVersion": 1,
+  "saveVersion": 1,
+
+  "save": {
+    "key": "mutationfarm_save_v1",
+    "backupKey": "mutationfarm_save_v1_backup",
+    "autosaveIntervalSeconds": 10,
+    "snapshotSlots": 3,
+    "snapshotKeyPrefix": "mutationfarm_snapshot_v1_"
+  },
+
+  "feedbackUrl": "",
+
+  "start": {
+    "coins": 100,
+    "inventorySlots": 10,
+    "placeholder": true
+  },
+
+  "offline": {
+    "_comment": "Progression hors ligne appliquée au rechargement, à vitesse x1 (le multiplicateur dev n'est pas appliqué hors ligne). Rien n'avance si le temps était en pause.",
+    "enabled": true,
+    "maxHours": 24
+  },
+
+  "grid": {
+    "startSize": 3,
+    "maxSizeWithCoins": 6,
+    "maxSizeVip": 8,
+    "expandCosts": { "4": 500, "5": 2000, "6": 8000 },
+    "vipExpandCosts": { "7": 0, "8": 0 },
+    "placeholder": true
+  },
+
+  "plants": {
+    "carotte": {
+      "name": "Carotte", "emoji": "🥕", "letter": "C", "color": "#f4a259",
+      "tier": 0, "isBaseSeed": true,
+      "seedPrice": 10, "growSeconds": 60, "sellValue": 18,
+      "placeholder": true
+    },
+    "radis": {
+      "name": "Radis", "emoji": "🔴", "letter": "R", "color": "#e5707e",
+      "tier": 0, "isBaseSeed": true,
+      "seedPrice": 10, "growSeconds": 90, "sellValue": 20,
+      "placeholder": true
+    },
+    "mais": {
+      "name": "Maïs", "emoji": "🌽", "letter": "M", "color": "#f2d16b",
+      "tier": 0, "isBaseSeed": true,
+      "seedPrice": 40, "growSeconds": 120, "sellValue": 75,
+      "placeholder": true
+    },
+    "fraise": {
+      "name": "Fraise", "emoji": "🍓", "letter": "F", "color": "#ec6a6a",
+      "tier": 0, "isBaseSeed": true,
+      "seedPrice": 60, "growSeconds": 150, "sellValue": 110,
+      "placeholder": true
+    },
+    "carotte_pourpre": {
+      "name": "Carotte Pourpre", "emoji": "🥕", "letter": "CP", "color": "#a970d6",
+      "tier": 1, "isBaseSeed": false,
+      "seedPrice": null, "growSeconds": null, "sellValue": 250,
+      "placeholder": true
+    },
+    "mais_doreur": {
+      "name": "Maïs Doreur", "labelSetting": "maisDoreurLabel",
+      "emoji": "🌽", "letter": "MD", "color": "#e8b923",
+      "tier": 2, "isBaseSeed": false,
+      "seedPrice": null, "growSeconds": null, "sellValue": 1500,
+      "placeholder": true
+    },
+    "fraise_celeste": {
+      "name": "Fraise Céleste", "emoji": "🍓", "letter": "FC", "color": "#7fb8f0",
+      "tier": 2, "isBaseSeed": false,
+      "seedPrice": null, "growSeconds": null, "sellValue": 900,
+      "placeholder": true
+    },
+    "citrouille_nebulique": {
+      "name": "Citrouille Nébulique", "emoji": "🎃", "letter": "CN", "color": "#5b4b9a",
+      "tier": 3, "isBaseSeed": false,
+      "seedPrice": null, "growSeconds": null, "sellValue": 15000,
+      "placeholder": true
+    }
+  },
+
+  "recipes": [
+    { "id": "r1", "parents": ["carotte", "radis"], "result": "carotte_pourpre", "tier": 1, "baseRate": 0.40 },
+    { "id": "r2", "parents": ["carotte_pourpre", "mais"], "result": "mais_doreur", "tier": 2, "baseRate": 0.20 },
+    { "id": "r3", "parents": ["mais_doreur", "fraise_celeste"], "result": "citrouille_nebulique", "tier": 3, "baseRate": 0.05 },
+    { "id": "r_todo_fraise_celeste", "parents": ["fraise", "radis"], "result": "fraise_celeste", "tier": 2, "baseRate": 0.20,
+      "todo": true, "_comment": "Recette PROVISOIRE : le GDD ne donne pas encore l'origine de la Fraise Céleste." }
+  ],
+
+  "chance": {
+    "_comment": "chance = base x multiplicateur_gènes + bonus_fixes ; finale = min(chance, capMultiplierOfBase x base, absoluteCap). Les bonus viennent des Game Pass et de l'encyclopédie.",
+    "capMultiplierOfBase": 2,
+    "absoluteCap": 0.75
+  },
+
+  "pollen": {
+    "maxCharges": 3,
+    "costPerAttempt": 1,
+    "rechargeCost": { "coins": 150, "robux": 19 },
+    "placeholder": true
+  },
+
+  "guaranteedFusion": {
+    "_comment": "Achat ponctuel : 100 % pour la prochaine tentative de la graine, ignore le plafond. Monnaie choisie par undecided.guaranteedFusionCurrency.",
+    "costByTier": {
+      "1": { "coins": 5000, "robux": 99 },
+      "2": { "coins": 50000, "robux": 499 },
+      "3": { "coins": 500000, "robux": 1999 }
+    },
+    "robuxPricesPlaceholder": true
+  },
+
+  "market": {
+    "_comment": "Conditions de déblocage des graines au marché. type: start | discover (plante découverte) | gridSize (taille de grille atteinte).",
+    "unlocks": {
+      "carotte": { "type": "start" },
+      "radis": { "type": "start" },
+      "mais": { "type": "discover", "plant": "carotte_pourpre" },
+      "fraise": { "type": "gridSize", "size": 4 }
+    },
+    "placeholder": true
+  },
+
+  "encyclopedia": {
+    "_comment": "Une plante est découverte à sa première maturation. Une page complète débloque son bonus permanent.",
+    "pages": [
+      { "id": 1, "title": "Pousses de base", "plants": ["carotte", "radis", "mais", "fraise"],
+        "bonus": { "name": "Arrosoir en Bronze", "type": "growSpeed", "value": 0.10 } },
+      { "id": 2, "title": "Mutants palier 1", "plants": ["carotte_pourpre"],
+        "bonus": { "name": "Sac de graines", "type": "inventorySlots", "value": 2 } },
+      { "id": 3, "title": "Mutants palier 2", "plants": ["mais_doreur", "fraise_celeste"],
+        "bonus": { "name": "Arrosoir en Or", "type": "growSpeed", "value": 0.25 } },
+      { "id": 4, "title": "Mutants palier 3", "plants": ["citrouille_nebulique"],
+        "bonus": { "name": "Chapeau de Maître Botaniste", "type": "chancePoints", "value": 0.05 } }
+    ]
+  },
+
+  "growth": {
+    "_comment": "durée = growSeconds x (1 - réductions des Game Pass) / (1 + somme des bonus growSpeed de l'encyclopédie)."
+  },
+
+  "robuxShop": {
+    "_comment": "Achats SIMULÉS : aucun paiement, chaque achat incrémente le compteur « Robux dépensés (simulé) ».",
+    "gamePasses": {
+      "luckyGenes": { "name": "Gènes de Chance", "price": 499, "effect": { "type": "chanceMultiplier", "value": 1.5 } },
+      "autoWater": { "name": "Arrosoir Automatique", "price": 399, "effect": { "type": "growTimeReduction", "value": 0.30 } },
+      "vipExtension": { "name": "Extension VIP", "price": 599, "effect": { "type": "maxGridSize", "value": 8 } }
+    },
+    "consumables": {
+      "superFertilizer": { "name": "Super Engrais", "price": 29, "effect": { "type": "instantMature" } },
+      "gardenerPurse": { "name": "Bourse du Jardinier", "price": 99, "effect": { "type": "coins", "value": 5000 } },
+      "botanistChest": { "name": "Coffre du Botaniste", "price": 499, "effect": { "type": "coins", "value": 30000 } },
+      "exoticSeeds": { "name": "Graines Exotiques", "price": 99, "effect": { "type": "exoticTag", "count": 3 }, "placeholder": true }
+    }
+  },
+
+  "undecided": {
+    "_comment": "Points non tranchés du GDD. Valeur par défaut ici, basculable en direct dans le panneau dev.",
+    "guaranteedFusionCurrency": { "value": "coins", "options": ["coins", "robux"], "label": "Monnaie de la fusion garantie" },
+    "pollenRechargeCurrency": { "value": "both", "options": ["coins", "robux", "both"], "label": "Monnaie de la recharge de pollen" },
+    "superFertilizerEnabled": { "value": true, "options": [true, false], "label": "Super Engrais activé" },
+    "maisDoreurLabel": { "value": "Maïs Doreur", "options": ["Maïs Doreur", "Maïs Doré"], "label": "Nom du mutant palier 2" }
+  },
+
+  "dev": {
+    "speedPresets": [1, 2, 5, 10, 60, 600],
+    "advanceButtonsSeconds": [10, 60, 600],
+    "coinButtons": [100, 1000, 100000]
+  },
+
+  "ui": {
+    "toastSeconds": 2.5,
+    "logMaxEntries": 500,
+    "panelRefreshMs": 250
+  }
+}
